@@ -1,13 +1,12 @@
-import keras
-from keras.callbacks import Callback
-from keras import backend as K
-from keras.preprocessing.image import ImageDataGenerator
-from keras.models import Model, load_model
-from keras import optimizers
 import math
-import random
-import numpy as np
+
+import keras
 import matplotlib.pyplot as plt
+import numpy as np
+from keras import backend as K
+from keras import optimizers
+from keras.callbacks import Callback
+from keras.models import Model
 
 if K.backend() == 'theano':
     if K.image_data_format() == 'channels_last':
@@ -16,11 +15,13 @@ else:
     if K.image_data_format() == 'channels_first':
         K.set_image_data_format('channels_last')
 
+
 class LR_Updater(Callback):
     '''This callback is utilized to log learning rates every iteration (batch cycle)
     it is not meant to be directly used as a callback but extended by other callbacks
     ie. LR_Cycle
     '''
+
     def __init__(self, iterations, epochs=1):
         '''
         iterations = dataset size / batch size
@@ -29,23 +30,29 @@ class LR_Updater(Callback):
         self.epoch_iterations = iterations
         self.trn_iterations = 0.
         self.history = {}
-    def setRate(self):
+
+    def calc_lr(self):
         return K.get_value(self.model.optimizer.lr)
+
     def on_train_begin(self, logs={}):
         self.trn_iterations = 0.
         logs = logs or {}
+
     def on_batch_end(self, batch, logs=None):
         logs = logs or {}
         self.trn_iterations += 1
-        K.set_value(self.model.optimizer.lr, self.setRate())
+        # assign new learning rate to variable.
+        K.set_value(self.model.optimizer.lr, self.calc_lr())
         self.history.setdefault('lr', []).append(K.get_value(self.model.optimizer.lr))
         self.history.setdefault('iterations', []).append(self.trn_iterations)
         for k, v in logs.items():
             self.history.setdefault(k, []).append(v)
+
     def plot_lr(self):
         plt.xlabel("iterations")
         plt.ylabel("learning rate")
         plt.plot(self.history['iterations'], self.history['lr'])
+
     def plot(self, n_skip=10):
         plt.xlabel("learning rate (log scale)")
         plt.ylabel("loss")
@@ -53,10 +60,9 @@ class LR_Updater(Callback):
         plt.xscale('log')
 
 
-
 class LR_Find(LR_Updater):
     '''This callback is utilized to determine the optimal lr to be used
-    it is based on this pytorch implementation https://github.com/fastai/fastai/blob/master/fastai/learner.py
+    it is based on this pytorch implementation https://github.com/fastai/fastai/blob/master/fastai/conv_learner.py
     and adopted from this keras implementation https://github.com/bckenstler/CLR
     it loosely implements methods described in the paper https://arxiv.org/pdf/1506.01186.pdf
     '''
@@ -71,44 +77,47 @@ class LR_Find(LR_Updater):
         '''
         self.min_lr = min_lr
         self.max_lr = max_lr
-        self.lr_mult = (max_lr/min_lr)**(1/iterations)
+        self.lr_mult = (max_lr / min_lr) ** (1 / iterations)
         self.jump = jump
         super().__init__(iterations, epochs=epochs)
-    def setRate(self):
-        return self.min_lr * (self.lr_mult**self.trn_iterations)
+
+    def calc_lr(self):
+        return self.min_lr * (self.lr_mult ** self.trn_iterations)
+
     def on_train_begin(self, logs={}):
         super().on_train_begin(logs=logs)
-        try: #multiple lr's
+        try:  # multiple lr's
             K.get_variable_shape(self.model.optimizer.lr)[0]
-            self.min_lr = np.full(K.get_variable_shape(self.model.optimizer.lr),self.min_lr)
+            self.min_lr = np.full(K.get_variable_shape(self.model.optimizer.lr), self.min_lr)
         except IndexError:
             pass
         K.set_value(self.model.optimizer.lr, self.min_lr)
-        self.best=1e9
-        self.model.save_weights('tmp.hd5') #save weights
+        self.best = 1e9
+        self.model.save_weights('tmp.hd5')  # save weights
+
     def on_train_end(self, logs=None):
-        self.model.load_weights('tmp.hd5') #load_weights
+        self.model.load_weights('tmp.hd5')  # load_weights
+
     def on_batch_end(self, batch, logs=None):
-        #check if we have made an x-fold jump in loss and training should stop
+        # check if we have made an x-fold jump in loss and training should stop
         try:
             loss = self.history['loss'][-1]
-            if math.isnan(loss) or loss > self.best*self.jump:
+            if math.isnan(loss) or loss > self.best * self.jump:
                 self.model.stop_training = True
             if loss < self.best:
-                self.best=loss
+                self.best = loss
         except KeyError:
             pass
         super().on_batch_end(batch, logs=logs)
-        
-        
-        
-        
+
+
 class LR_Cycle(LR_Updater):
-    '''This callback is utilized to implement cyclical learning rates
+    '''This callback is utilized to implement `Cyclical Learning Rates`
     it is based on this pytorch implementation https://github.com/fastai/fastai/blob/master/fastai
     and adopted from this keras implementation https://github.com/bckenstler/CLR
     it loosely implements methods described in the paper https://arxiv.org/pdf/1506.01186.pdf
     '''
+
     def __init__(self, iterations, cycle_len=1, cycle_mult=1, epochs=1):
         '''
         iterations = dataset size / batch size
@@ -122,15 +131,18 @@ class LR_Cycle(LR_Updater):
         self.cycle_mult = cycle_mult
         self.cycle_iterations = 0.
         super().__init__(iterations, epochs=epochs)
-    def setRate(self):
+
+    def calc_lr(self):
         self.cycle_iterations += 1
-        cos_out = np.cos(np.pi*(self.cycle_iterations)/self.epoch_iterations) + 1
-        if self.cycle_iterations==self.epoch_iterations:
+        cos_out = np.cos(np.pi * (self.cycle_iterations) / self.epoch_iterations) + 1
+
+        if self.cycle_iterations == self.epoch_iterations:
             self.cycle_iterations = 0.
             self.epoch_iterations *= self.cycle_mult
         return self.max_lr / 2 * cos_out
+
     def on_train_begin(self, logs={}):
-        super().on_train_begin(logs={}) #changed to {} to fix plots after going from 1 to mult. lr
+        super().on_train_begin(logs={})  # changed to {} to fix plots after going from 1 to mult. lr
         self.cycle_iterations = 0.
         self.max_lr = K.get_value(self.model.optimizer.lr)
 
@@ -166,8 +178,8 @@ class SGD2(optimizers.Optimizer):
     @keras.optimizers.interfaces.legacy_get_updates_support
     def get_updates(self, loss, params):
         grads = self.get_gradients(loss, params)
-#         print(type(self.lr))
-#         [print(type(item),item.name) for item in params]
+        #         print(type(self.lr))
+        #         [print(type(item),item.name) for item in params]
         self.updates = [K.update_add(self.iterations, 1)]
 
         lr = self.lr
@@ -178,13 +190,13 @@ class SGD2(optimizers.Optimizer):
         shapes = [K.int_shape(p) for p in params]
         moments = [K.zeros(shape) for shape in shapes]
         self.weights = [self.iterations] + moments
-        grp = 0 #set layer grp to 1
+        grp = 0  # set layer grp to 1
         for p, g, m in zip(params, grads, moments):
             if self.split1 == p.name:
                 grp = 1
             if self.split2 == p.name:
                 grp = 2
-#             print("lr_grp",grp)
+            #             print("lr_grp",grp)
             v = self.momentum * m - lr[grp] * g  # velocity
             self.updates.append(K.update(m, v))
 
@@ -207,20 +219,20 @@ class SGD2(optimizers.Optimizer):
                   'nesterov': self.nesterov}
         base_config = super(SGD2, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
-    
+
 
 def finetune(model, num_classes):
     '''removes the last layer of a nn and adds a fully-connected layer for predicting num_classes
     '''
-    #model.layers.pop()
+    # model.layers.pop()
     for layer in model.layers: layer.trainable = False
     last = model.layers[-1].output
     x = keras.layers.Flatten()(last)
     preds = keras.layers.Dense(num_classes, activation='softmax', name='fc_start')(x)
     return Model(model.input, preds)
 
-    
-def finetune2(model, num_classes, pool_layer_name, dropout=[.25,.25], dense=1024):
+
+def finetune2(model, num_classes, pool_layer_name, dropout=[.25, .25], dense=1024):
     '''removes the last layers of a nn and adds a fully-connected layers 
     for predicting num_classes
     
@@ -234,9 +246,9 @@ def finetune2(model, num_classes, pool_layer_name, dropout=[.25,.25], dense=1024
     model.layers.pop()
     for layer in model.layers: layer.trainable = False
     last = model.output
-    a = keras.layers.MaxPooling2D(pool_size=(7,7),name='maxpool')(last)
-    b = keras.layers.AveragePooling2D(pool_size=(7,7),name='avgpool')(last)
-    x = keras.layers.concatenate([a,b], axis = 1)
+    a = keras.layers.MaxPooling2D(pool_size=(7, 7), name='maxpool')(last)
+    b = keras.layers.AveragePooling2D(pool_size=(7, 7), name='avgpool')(last)
+    x = keras.layers.concatenate([a, b], axis=1)
     x = keras.layers.Flatten()(x)
     x = keras.layers.BatchNormalization(epsilon=1e-05, name='fc_start')(x)
     x = keras.layers.Dropout(dropout[0])(x)

@@ -1,8 +1,11 @@
-from .transform import *
-from .learner import *
 from enum import IntEnum
-from keras.preprocessing.image import ImageDataGenerator
+
 from keras.applications.resnet50 import preprocess_input
+from keras.preprocessing.image import ImageDataGenerator
+
+from .conv_learner import *
+from .transform import *
+
 
 class ImageClassifierData:
     @classmethod
@@ -23,21 +26,23 @@ class ImageClassifierData:
                 sz = tfms[0].sz
             except AttributeError:
                 raise Exception('sz must be set through tfms_from_model or passed as an argument')
-        
+
         if tfms == None: tfms = ImageDataGenerator(), ImageDataGenerator()
-        train = tfms[0].flow_from_directory(path+trn_name, target_size=(sz,sz),
-                class_mode='categorical', shuffle=True, batch_size=bs, **kwargs)
-        valid = tfms[0].flow_from_directory(path+val_name, target_size=(sz,sz),
-                class_mode='categorical', shuffle=False, batch_size=bs, **kwargs)
-        return train,valid
-    
+        train = tfms[0].flow_from_directory(path + trn_name, target_size=(sz, sz),
+                                            class_mode='categorical', shuffle=True, batch_size=bs, **kwargs)
+        valid = tfms[0].flow_from_directory(path + val_name, target_size=(sz, sz),
+                                            class_mode='categorical', shuffle=False, batch_size=bs, **kwargs)
+        return train, valid
+
+
 class CropType(IntEnum):
     """ Type of image cropping.
     """
     RANDOM = 1
     CENTER = 2
     NO = 3
-    
+
+
 def tfms_from_model(model, sz, crop_type=CropType.CENTER, **kwargs):
     '''
     @args:
@@ -50,16 +55,16 @@ def tfms_from_model(model, sz, crop_type=CropType.CENTER, **kwargs):
     '''
     if model == ResNet50:
         preprocess = preprocess_input
-    crop = CenterCrop(sz,preprocess=preprocess)
+    crop = CenterCrop(sz, preprocess=preprocess)
     if crop_type == CropType.RANDOM:
-        crop = RandCrop(sz,preprocess=preprocess)
+        crop = RandCrop(sz, preprocess=preprocess)
     elif crop_type == CropType.NO:
         crop = None
-    
+
     train_gen = ImageDataGenerator(preprocessing_function=crop, **kwargs)
-    val_gen = ImageDataGenerator(preprocessing_function=CenterCrop(sz,preprocess=preprocess))
-    #train_gen = ImageDataGenerator(preprocessing_function=preprocess_input, **kwargs)
-    #val_gen = ImageDataGenerator(preprocessing_function=preprocess_input)
+    val_gen = ImageDataGenerator(preprocessing_function=CenterCrop(sz, preprocess=preprocess))
+    # train_gen = ImageDataGenerator(preprocessing_function=preprocess_input, **kwargs)
+    # val_gen = ImageDataGenerator(preprocessing_function=preprocess_input)
     train_gen.sz = sz
     val_gen.sz = sz
     return train_gen, val_gen
