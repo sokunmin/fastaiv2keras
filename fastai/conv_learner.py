@@ -30,8 +30,8 @@ class ConvLearner():  # todo implement learner parent class
             model = finetune2(arch(input_shape=data[0].image_shape, include_top=include_top), data[0].num_classes,
                               finetune2_layer, **kwargs)
         else:
-            model = finetune(arch(input_shape=data[0].image_shape, include_top=include_top), data[0].num_classes,
-                             **kwargs)
+            model = finetune(arch(input_shape=data[0].image_shape, include_top=include_top), 
+                             data[0].num_classes, **kwargs)
         return cls(model, data, arch)
 
     def fit(self, lrs, n_cycle, cycle_len=None, cycle_mult=1,
@@ -64,7 +64,7 @@ class ConvLearner():  # todo implement learner parent class
             # n_epoch = sum_geom(cycle_len if cycle_len else 1, cycle_mult, n_cycle)
             epochs = cycle_len * n_cycle if cycle_mult == 1 else math.ceil(
                 cycle_len * (1 - cycle_mult ** n_cycle) / (1 - cycle_mult))
-            print(f'epochs: {epochs}')
+            print('epochs: {}'.format(epochs))
             self.sched = LR_Cycle(math.ceil(self.data[0].samples / self.data[0].batch_size),
                                   cycle_len=cycle_len, cycle_mult=cycle_mult, epochs=epochs)
             callbacks.append(self.sched)
@@ -96,11 +96,11 @@ class ConvLearner():  # todo implement learner parent class
     def load(self, path):
         self.model = load_model(path)
 
-    def lr_find(self, jump=6, workers=4):
+    def lr_find(self, min_lr=1e-05, epochs=1, jump=6, workers=4):
         # use `LR_Find` to find the most appropriate learning rate.
         self.sched = LR_Find(math.ceil(self.data[0].samples / self.data[0].batch_size), jump=jump)
-        sgd = optimizers.SGD(lr=1e-05, momentum=0.9)
+        sgd = optimizers.SGD(lr=min_lr, momentum=0.9)
         self.model.compile(loss='categorical_crossentropy', optimizer=sgd)
         self.model.fit_generator(self.data[0],
                                  steps_per_epoch=math.ceil(self.data[0].samples / self.data[0].batch_size),
-                                 epochs=1, callbacks=[self.sched], workers=workers)
+                                 epochs=epochs, callbacks=[self.sched], workers=workers)

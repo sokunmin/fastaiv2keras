@@ -5,7 +5,35 @@ from keras.preprocessing.image import ImageDataGenerator
 
 from .conv_learner import *
 from .transform import *
+import numpy as np
 
+
+def get_cv_idxs(n, cv_idx=0, val_pct=0.2, seed=42):
+    np.random.seed(seed)
+    n_val = int(val_pct*n)
+    idx_start = cv_idx*n_val
+    idxs = np.random.permutation(n)
+    return idxs[idx_start:idx_start+n_val]
+
+def parse_csv_labels(fn, skip_header=True):
+    skip = 1 if skip_header else 0
+    csv_lines = [o.strip().split(',') for o in open(fn)][skip:]
+    fnames = [fname for fname, _ in csv_lines]
+    csv_labels = {a:b.split(' ') for a,b in csv_lines}
+    all_labels = sorted(list(set(p for o in csv_labels.values() for p in o)))
+    label2idx = {v:k for k,v in enumerate(all_labels)}
+    return sorted(fnames), csv_labels, all_labels, label2idx
+
+def csv_source(folder, csv_file, skip_header=True, suffix='', continuous=False):
+    fnames,csv_labels,all_labels,label2idx = parse_csv_labels(csv_file, skip_header)
+    full_names = [os.path.join(folder,fn+suffix) for fn in fnames]
+    if continuous:
+        label_arr = np.array([csv_labels[i] for i in fnames]).astype(np.float32)
+    else:
+        label_arr = nhot_labels(label2idx, csv_labels, fnames, len(all_labels))
+        is_single = np.all(label_arr.sum(axis=1)==1)
+        if is_single: label_arr = np.argmax(label_arr, axis=1)
+    return full_names, label_arr, all_labels
 
 class ImageClassifierData:
     @classmethod

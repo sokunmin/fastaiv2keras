@@ -1,12 +1,13 @@
 import math
 
 import keras
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import numpy as np
 from keras import backend as K
 from keras import optimizers
 from keras.callbacks import Callback
 from keras.models import Model
+from .plot.plotter import Plot
 
 if K.backend() == 'theano':
     if K.image_data_format() == 'channels_last':
@@ -30,6 +31,7 @@ class LR_Updater(Callback):
         self.epoch_iterations = iterations
         self.trn_iterations = 0.
         self.history = {}
+        self.best = {}
 
     def calc_lr(self):
         return K.get_value(self.model.optimizer.lr)
@@ -48,16 +50,32 @@ class LR_Updater(Callback):
         for k, v in logs.items():
             self.history.setdefault(k, []).append(v)
 
-    def plot_lr(self):
-        plt.xlabel("iterations")
-        plt.ylabel("learning rate")
-        plt.plot(self.history['iterations'], self.history['lr'])
+    def plot_lr(self, size=(8, 6)):
+        plt = Plot()
+        plt.fig = size
+        plt.grid = (1, 1)
+        plt.subfigure(0, 'Learning Rate Finder', 'Iterations', 'Learning Rate')
+        #plt.plot(0, name='', x=self.history['iterations'], y=self.history['lr'], color='b')
+        plt.plot(0, self.history['iterations'], self.history['lr'], 'b')
+        plt.show()
 
-    def plot(self, n_skip=10):
-        plt.xlabel("learning rate (log scale)")
-        plt.ylabel("loss")
-        plt.plot(self.history['lr'][n_skip:-5], self.history['loss'][n_skip:-5])
-        plt.xscale('log')
+    def plot(self, size=(8, 6), log_scale=True, n_skip=10):
+        plt = Plot()
+        plt.fig = size
+        plt.grid = (1, 1)
+        plt.subfigure(0, 'Learning Rate Finder In Loss', 'Learning Rate (log scale)', 'Loss')
+        plt.plot(0, self.history['lr'][n_skip:-1], self.history['loss'][n_skip:-1], 'b')
+        label = 'iter: %d \n loss: %.3f \n lr: %.4f' % (self.best['iteration'], self.best['loss'], self.best['lr'])
+        print(self.best)
+        plt.axs[0].annotate(label, 
+                            xy=(self.best['lr'], self.best['loss']), 
+                            xytext=(self.best['lr'] * 0.7, self.best['loss'] * 5),
+                            arrowprops=dict(facecolor='yellow', shrink=0.05, headwidth=7, width=2.5),
+                            horizontalalignment='left',)
+        if log_scale:
+            plt.axs[0].set_xscale("log")
+            #plt.axs[0].set_yscale("log")
+        plt.show()
 
 
 class LR_Find(LR_Updater):
@@ -67,7 +85,7 @@ class LR_Find(LR_Updater):
     it loosely implements methods described in the paper https://arxiv.org/pdf/1506.01186.pdf
     '''
 
-    def __init__(self, iterations, epochs=1, min_lr=1e-05, max_lr=10, jump=6):
+    def __init__(self, iterations, epochs=1, min_lr=1e-05, max_lr=10, jump=6, linear=False):
         '''
         iterations = dataset size / batch size
         epochs should always be 1
@@ -75,14 +93,20 @@ class LR_Find(LR_Updater):
         max_lr is the upper bound of the learning rate
         jump is the x-fold loss increase that will cause training to stop (defaults to 6)
         '''
+        self.linear = linear
         self.min_lr = min_lr
         self.max_lr = max_lr
-        self.lr_mult = (max_lr / min_lr) ** (1 / iterations)
+        ratio = max_lr / min_lr
+        self.lr_mult = (ratio / iterations) if linear else ratio ** (1 / iterations)
+        #self.lr_mult = (max_lr / min_lr) ** (1 / iterations)
         self.jump = jump
         super().__init__(iterations, epochs=epochs)
 
     def calc_lr(self):
-        return self.min_lr * (self.lr_mult ** self.trn_iterations)
+        mult = self.lr_mult * self.trn_iterations if self.linear else self.lr_mult ** self.trn_iterations
+        #lr = self.min_lr * (self.lr_mult ** self.trn_iterations)
+        lr = self.min_lr * mult
+        return lr
 
     def on_train_begin(self, logs={}):
         super().on_train_begin(logs=logs)
@@ -92,7 +116,9 @@ class LR_Find(LR_Updater):
         except IndexError:
             pass
         K.set_value(self.model.optimizer.lr, self.min_lr)
-        self.best = 1e9
+        self.best = {'iteration':0, 'loss':1e9, 'lr':self.min_lr}
+        print(self.best)
+        
         self.model.save_weights('tmp.hd5')  # save weights
 
     def on_train_end(self, logs=None):
@@ -102,10 +128,15 @@ class LR_Find(LR_Updater):
         # check if we have made an x-fold jump in loss and training should stop
         try:
             loss = self.history['loss'][-1]
-            if math.isnan(loss) or loss > self.best * self.jump:
+            if math.isnan(loss) or loss > self.best['loss'] * self.jump:
+                print('\nbest loss: %.6f' % self.best['loss'])
+                print('best lr: %.6f' % self.best['lr'])
+                print('best iteration: %d' % self.best['iteration'])
                 self.model.stop_training = True
-            if loss < self.best:
-                self.best = loss
+            if loss < self.best['loss']:
+                self.best['loss'] = loss
+                self.best['iteration'] = self.trn_iterations
+                self.best['lr'] = K.get_value(self.model.optimizer.lr)
         except KeyError:
             pass
         super().on_batch_end(batch, logs=logs)

@@ -1,9 +1,4 @@
-########################################################################
-#
-# Published under the MIT License. See the file LICENSE for details.
 # Copyright 2017 by Chun-Ming Su
-#
-########################################################################
 
 from __future__ import absolute_import
 from __future__ import division
@@ -19,7 +14,7 @@ class Plot(object):
         self._fig = None
         self._gs = None
         self._projection = None
-        self.axs = {}
+        self._axs = {}
 
     @property
     def fig(self):
@@ -37,6 +32,10 @@ class Plot(object):
     def grid(self, spec):
         self._gs = gridspec.GridSpec(spec[0], spec[1])
 
+    @property
+    def axs(self):
+        return self._axs
+        
     def subfigure(self, index, title, xlabel, ylabel, zlabel=None, projection='2d'):
         self._projection = projection
         ax = self._fig.add_subplot(self._gs[index], projection=projection) \
@@ -46,11 +45,14 @@ class Plot(object):
         ax.set_ylabel(ylabel)
         if zlabel:
             ax.set_zlabel(zlabel)
-        self.axs[index] = ax
+        self._axs[index] = ax
 
-    def plot(self, index, name, x, y, color, alpha=1.0):
-        return self.axs[index].plot(x, y, label=name, c=color, linewidth=1, alpha=alpha)[0]
+    # def plot(self, index, name, x, y, color, alpha=1.0):
+    #     self._axs[index].plot(x, y, label=name, c=color, linewidth=1, alpha=alpha)
 
+    def plot(self, index, *args):
+        self._axs[index].plot(*args)
+        
     def hist(self, ax, data, bins, range, rwidth, color):
         return ax.hist(data, bins=bins, range=range, rwidth=rwidth, color=color)[0]
 
