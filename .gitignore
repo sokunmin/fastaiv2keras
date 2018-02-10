@@ -2,3 +2,4 @@
 *.hd5
 fastai/plot/.idea/
 .ipynb_checkpoints/
+.idea/
