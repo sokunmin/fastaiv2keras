@@ -50,8 +50,8 @@ class Plot(object):
     # def plot(self, index, name, x, y, color, alpha=1.0):
     #     self._axs[index].plot(x, y, label=name, c=color, linewidth=1, alpha=alpha)
 
-    def plot(self, index, *args):
-        self._axs[index].plot(*args)
+    def plot(self, index, *args, **kwargs):
+        self._axs[index].plot(*args, **kwargs)
         
     def hist(self, ax, data, bins, range, rwidth, color):
         return ax.hist(data, bins=bins, range=range, rwidth=rwidth, color=color)[0]
